@@ -67,7 +67,7 @@ PLUGIN_ICON = "icon.png"
 OUTPUT_PATH = r"./"
 
 """ PLUGIN_VERSION: A version string for the generated .tpp file name. This example reads the `__version__` from the example plugin's code. """
-PLUGIN_VERSION = "2.2.0"
+PLUGIN_VERSION = "2.3.0"
 
 # Or just set the PLUGIN_VERSION manually.
 # PLUGIN_VERSION = "1.0.0-beta1"
@@ -86,7 +86,10 @@ ADDITIONAL_TPPSDK_ARGS = []
 Any additional arguments to be passed to Pyinstaller. Optional.
 """
 ADDITIONAL_PYINSTALLER_ARGS = [
-    "--log-level=WARN"
+    "--log-level=WARN",
+    "--collect-all=socketio",   # python-socketio uses dynamic internal imports
+    "--collect-all=engineio",   # python-engineio (socketio dependency) same issue
+    "--hidden-import=websocket",  # websocket-client transport used by socketio
 ]
 
 # validateBuild()

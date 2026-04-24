@@ -1,6 +1,6 @@
 {
   "sdk": 6,
-  "version": 220,
+  "version": 231,
   "name": "YouTube Music Desktop plugin",
   "id": "YoutubeMusic",
   "configuration": {
@@ -12,18 +12,6 @@
       "name": "IPv4 address",
       "type": "text",
       "default": "localhost",
-      "readOnly": false
-    },
-	{
-      "name": "Passcode",
-      "type": "text",
-      "default": "XXXXX",
-      "readOnly": false
-    },
-	{
-      "name": "Lyrics Range",
-      "type": "text",
-      "default": "-5, 5",
       "readOnly": false
     },
 	{
