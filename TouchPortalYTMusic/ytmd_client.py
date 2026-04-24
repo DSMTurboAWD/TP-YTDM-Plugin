@@ -79,6 +79,7 @@ def get_state():
 
 
 _last_video_id = None
+_state_cache: dict = {}  # tracks last-sent value per state ID to avoid redundant updates
 
 
 def push_tp_states(state_data):
@@ -129,41 +130,42 @@ def push_tp_states(state_data):
                     log(f"Cover art error: {ex}")
             threading.Thread(target=_fetch_cover, daemon=True).start()
 
-    updates = [
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerTitle",
-         "value": str(video.get("title") or "") if video else ""},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackauthor",
-         "value": str(video.get("author") or "") if video else ""},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackalbum",
-         "value": str(video.get("album") or "") if video else ""},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerhasSong",
-         "value": has_song},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerisPaused",
-         "value": is_paused},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerVPercent",
-         "value": str(int(player.get("volume") or 0))},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackdurationhuman",
-         "value": format_seconds(duration_secs)},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackcurrentdurationhuman",
-         "value": format_seconds(state.current_video_progress)},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerCurrentSonglikeState",
-         "value": like_str},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.isAdvertisement",
-         "value": str(player.get("adPlaying", False))},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.SeekBarStatus",
-         "value": str(seek_pct)},
-        {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.repeatType",
-         "value": repeat_str},
+    # Build candidate update list — only include entries whose value changed.
+    candidates = [
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerTitle",
+         str(video.get("title") or "") if video else ""),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackauthor",
+         str(video.get("author") or "") if video else ""),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackalbum",
+         str(video.get("album") or "") if video else ""),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerhasSong",
+         has_song),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerisPaused",
+         is_paused),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerVPercent",
+         str(int(player.get("volume") or 0))),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackdurationhuman",
+         format_seconds(duration_secs)),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackcurrentdurationhuman",
+         format_seconds(state.current_video_progress)),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerCurrentSonglikeState",
+         like_str),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.isAdvertisement",
+         str(player.get("adPlaying", False))),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.SeekBarStatus",
+         str(seek_pct)),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.repeatType",
+         repeat_str),
     ]
 
     try:
         if selected_idx > 0 and len(items) > selected_idx - 1:
             prev = items[selected_idx - 1]
-            updates += [
-                {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.title",
-                 "value": str(prev.get("title") or "")},
-                {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.author",
-                 "value": str(prev.get("author") or "")},
+            candidates += [
+                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.title",
+                 str(prev.get("title") or "")),
+                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.author",
+                 str(prev.get("author") or "")),
             ]
     except (IndexError, KeyError):
         pass
@@ -172,21 +174,33 @@ def push_tp_states(state_data):
         next_idx = selected_idx + 1
         if next_idx < len(items):
             nxt = items[next_idx]
-            updates += [
-                {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.title",
-                 "value": str(nxt.get("title") or "Unknown")},
-                {"id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.author",
-                 "value": str(nxt.get("author") or "Unknown")},
+            candidates += [
+                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.title",
+                 str(nxt.get("title") or "Unknown")),
+                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.author",
+                 str(nxt.get("author") or "Unknown")),
             ]
     except (IndexError, KeyError):
         pass
 
+    updates = [
+        {"id": sid, "value": val}
+        for sid, val in candidates
+        if _state_cache.get(sid) != val
+    ]
+    for entry in updates:
+        _state_cache[entry["id"]] = entry["value"]
+
     try:
-        TPClient.stateUpdateMany(updates)
-        TPClient.connectorUpdate(
-            "KillerBOSS.TP.Plugins.YTMD.connectors.APPcontrol",
-            int(player.get("volume") or 0)
-        )
+        if updates:
+            TPClient.stateUpdateMany(updates)
+
+        vol = int(player.get("volume") or 0)
+        if _state_cache.get("_connector_volume") != vol:
+            _state_cache["_connector_volume"] = vol
+            TPClient.connectorUpdate(
+                "KillerBOSS.TP.Plugins.YTMD.connectors.APPcontrol", vol
+            )
     except Exception as e:
         log(f"State update error: {e}")
 
