@@ -87,6 +87,7 @@ Any additional arguments to be passed to Pyinstaller. Optional.
 """
 ADDITIONAL_PYINSTALLER_ARGS = [
     "--log-level=WARN",
+    "--paths=lib",              # resolve imports from lib/ subdirectory
     "--collect-all=socketio",   # python-socketio uses dynamic internal imports
     "--collect-all=engineio",   # python-engineio (socketio dependency) same issue
     "--hidden-import=websocket",  # websocket-client transport used by socketio

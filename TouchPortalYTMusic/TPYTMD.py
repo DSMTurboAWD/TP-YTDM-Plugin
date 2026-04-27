@@ -1,5 +1,12 @@
+import os
+import sys
 import threading
 from sys import exit
+
+# Ensure lib/ is on the path for both source runs and the PyInstaller bundle.
+_lib_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
+if _lib_dir not in sys.path:
+    sys.path.insert(0, _lib_dir)
 
 from TouchPortalAPI import TYPES
 

@@ -100,8 +100,7 @@ def push_tp_states(state_data):
     track_state = player.get("trackState", -1)
     has_song    = str(bool(video))
     is_paused   = str(track_state == 0)   # 0=Paused, 1=Playing, 2=Buffering; -1=Unknown
-
-    seek_pct = 0
+    seek_pct= 0
     if duration_secs > 0:
         seek_pct = int(round((state.current_video_progress / duration_secs) * 100))
 
