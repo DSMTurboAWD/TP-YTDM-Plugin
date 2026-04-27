@@ -1,4 +1,5 @@
-"""Mutable shared plugin state. Import this module and mutate attributes directly:
+"""
+    Mutable shared plugin state. Import this module and mutate attributes directly:
     import state
     state.auth_token = token
 """

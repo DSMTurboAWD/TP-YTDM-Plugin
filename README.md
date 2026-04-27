@@ -70,5 +70,28 @@ This is an integration for [TouchPortal](https://www.touch-portal.com/) that all
 | `IPv4 address` | `localhost` | IP address of the machine running YTMD. Use `localhost` if YTMD is on the same PC. |
 | `Status` | *(read-only)* | Shows whether the plugin is currently connected to YTMD. |
 
+## File Locations
+
+| File | Path |
+|------|------|
+| Auth token | `%AppData%\tpytmdplugin\auth_token.txt` |
+| Log file | `%AppData%\TouchPortal\plugins\TouchPortalYTMusic\log.txt` |
+
+The auth token is stored outside the plugin folder so it survives plugin reinstalls or updates. Delete `auth_token.txt` to force re-authentication.
+
+## Troubleshooting
+
+**Plugin won't authenticate / Status shows "Auth failed"**
+- Make sure YTMD is running and the Companion Server is enabled in YTMD settings (**Integrations → Companion Server**).
+- When the auth prompt appears in YTMD, you have 30 seconds to click **Authorize**. If you miss it, the plugin retries automatically every 10 seconds.
+- To force a fresh auth, delete `%AppData%\tpytmdplugin\auth_token.txt` and restart TouchPortal.
+
+**Plugin connects but states don't update**
+- Check `log.txt` (see path above) for errors.
+- Use the **Check Connection** action on a button — it runs a live `GET /state` and logs the result.
+
+**"localhost" doesn't connect on Windows**
+- Windows may resolve `localhost` to an IPv6 address (`::1`) while YTMD only listens on IPv4. Set the `IPv4 address` setting to `127.0.0.1` explicitly.
+
 ## Info
 If you have any issues or suggestions, feel free to open an issue on GitHub or send an email!

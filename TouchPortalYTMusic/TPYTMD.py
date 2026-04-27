@@ -21,7 +21,6 @@ from socketio_client import sio, startup_sequence
 
 @TPClient.on(TYPES.onConnect)
 def onConnect(data):
-    print(data)
     state.running = True
     state.YTMD_server = data['settings'][0]['IPv4 address']
     log(f"Connecting to YTMD at {state.YTMD_server}:9863")
