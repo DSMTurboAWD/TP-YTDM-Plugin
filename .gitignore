@@ -1,2 +1,3 @@
 .env
 *.tpp
+*__pycache__/

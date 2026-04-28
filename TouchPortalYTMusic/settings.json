@@ -1,0 +1,7 @@
+{
+  "app_id": "tpytmdplugin",
+  "app_name": "TouchPortal YTMD Plugin",
+  "app_version": "2.4.1",
+  "min_python_version": "3.8",
+  "min_touch_portal_version": "3.0"
+}

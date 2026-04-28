@@ -27,6 +27,11 @@ In order for buildScript to work, you need to have the following variables in yo
 Even if you don't use all of the above variables, you still need to have the following variables in your build file
 """
 from TouchPortalAPI import tppbuild
+import json
+import os
+
+with open(os.path.join(os.path.dirname(__file__), "settings.json"), "r", encoding="utf-8") as _f:
+    _settings = json.load(_f)
 
 """
 PLUGIN_MAIN: This lets tppbuild know where your main python plugin file is located so it will know which file to compile.
@@ -66,16 +71,13 @@ PLUGIN_ICON = "icon.png"
 """ This tells tppbuild where you want finished build tpp to be saved at. Default "./" meaning current dir where tppbuild is running from. """
 OUTPUT_PATH = r"./"
 
-""" PLUGIN_VERSION: A version string for the generated .tpp file name. This example reads the `__version__` from the example plugin's code. """
-PLUGIN_VERSION = "2.2.0"
-
-# Or just set the PLUGIN_VERSION manually.
-# PLUGIN_VERSION = "1.0.0-beta1"
+""" PLUGIN_VERSION: Loaded from settings.json — the single source of truth for version. """
+PLUGIN_VERSION = _settings["app_version"]
 
 """
 If you have any required file(s) that your plugin needs, put them in this list.
 """
-ADDITIONAL_FILES = ["start.sh"]
+ADDITIONAL_FILES = ["start.sh", "settings.json"]
 
 """
 

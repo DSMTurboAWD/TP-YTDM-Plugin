@@ -160,30 +160,28 @@ def push_tp_states(state_data):
          repeat_str),
     ]
 
+    # Always include previous/next so stale values are cleared when moving to queue edges.
     try:
-        if selected_idx > 0 and len(items) > selected_idx - 1:
-            prev = items[selected_idx - 1]
-            candidates += [
-                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.title",
-                 str(prev.get("title") or "")),
-                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.author",
-                 str(prev.get("author") or "")),
-            ]
+        prev = items[selected_idx - 1] if selected_idx > 0 else None
     except (IndexError, KeyError):
-        pass
+        prev = None
+    candidates += [
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.title",
+         str(prev.get("title") or "") if prev else ""),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.author",
+         str(prev.get("author") or "") if prev else ""),
+    ]
 
     try:
-        next_idx = selected_idx + 1
-        if next_idx < len(items):
-            nxt = items[next_idx]
-            candidates += [
-                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.title",
-                 str(nxt.get("title") or "Unknown")),
-                ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.author",
-                 str(nxt.get("author") or "Unknown")),
-            ]
+        nxt = items[selected_idx + 1] if selected_idx + 1 < len(items) else None
     except (IndexError, KeyError):
-        pass
+        nxt = None
+    candidates += [
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.title",
+         str(nxt.get("title") or "") if nxt else ""),
+        ("KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.author",
+         str(nxt.get("author") or "") if nxt else ""),
+    ]
 
     updates = [
         {"id": sid, "value": val}
