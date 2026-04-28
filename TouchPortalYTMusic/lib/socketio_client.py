@@ -1,11 +1,12 @@
 import traceback
 import socketio
-from time import sleep
-
-from config import ytmd, log
-from tp_client import TPClient
 import auth
 import state
+
+from time import sleep
+from config import ytmd, log
+from tp_client import TPClient
+
 from ytmd_client import (
     push_tp_states, seed_initial_state, refresh_playlists, is_token_valid
 )
@@ -19,7 +20,6 @@ sio = socketio.Client(reconnection=False)
 # /api/v1/realtime is a Socket.IO namespace (not the server path).
 _NS = "/api/v1/realtime"
 
-
 @sio.on(Events.connect, namespace=_NS)
 def on_sio_connect():
     state.isYTMDRunning = True
@@ -28,33 +28,27 @@ def on_sio_connect():
     seed_initial_state()
     refresh_playlists()
 
-
 @sio.on(Events.disconnect, namespace=_NS)
 def on_sio_disconnect():
     state.isYTMDRunning = False
     log("Socket.IO disconnected")
     TPClient.settingUpdate("status", "YTMD is Not open")
 
-
 @sio.on(Events.connect_error, namespace=_NS)
 def on_sio_connect_error(data):
     log(f"Socket.IO connect_error event: {data}")
-
 
 @sio.on(Events.state_update, namespace=_NS)
 def on_state_update(payload):
     push_tp_states(payload)
 
-
 @sio.on(Events.playlist_created, namespace=_NS)
 def on_playlist_created(playlist):
     refresh_playlists()
 
-
 @sio.on(Events.playlist_deleted, namespace=_NS)
 def on_playlist_deleted(playlist_id):
     refresh_playlists()
-
 
 def startup_sequence():
     log(f"startup_sequence: thread started (running={state.running})")

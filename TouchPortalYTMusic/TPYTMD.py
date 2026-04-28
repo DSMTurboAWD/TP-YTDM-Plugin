@@ -13,14 +13,12 @@ from TouchPortalAPI import TYPES
 from config import log, ytmd
 from tp_client import TPClient
 import state
-from ytmd_client import (
-    ytmd_command, debounced_set_volume, get_state, push_tp_states
-)
+from ytmd_client import (ytmd_command, debounced_set_volume, get_state, push_tp_states)
 from socketio_client import sio, startup_sequence
 
 
 @TPClient.on(TYPES.onConnect)
-def onConnect(data):
+def onConnect(data: dict):
     state.running = True
     state.YTMD_server = data['settings'][0]['IPv4 address']
     # Normalize "localhost" to IPv4 — YTMD only listens on IPv4; on Windows
@@ -32,7 +30,7 @@ def onConnect(data):
 
 
 @TPClient.on(TYPES.onAction)
-def Actions(data):
+def Actions(data: dict):
     action_id    = data['actionId']
     action_value = data['data'][0]['value'] if data.get('data') else None
 
@@ -125,13 +123,13 @@ def Actions(data):
 
 
 @TPClient.on(TYPES.onConnectorChange)
-def connectorManager(data):
+def connectorManager(data: dict):
     if data['connectorId'] == "KillerBOSS.TP.Plugins.YTMD.connectors.APPcontrol" and state.isYTMDRunning:
         debounced_set_volume(data['value'])
 
 
 @TPClient.on(TYPES.onShutdown)
-def Disconnect(data):
+def Disconnect(data: dict):
     state.running = False
     try:
         sio.disconnect()

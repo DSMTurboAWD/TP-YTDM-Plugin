@@ -1,8 +1,8 @@
 import json
 import os
 import sys
-from time import strftime
 
+from time import strftime
 from ytmd_sdk import YTMD
 
 if getattr(sys, 'frozen', False):
@@ -22,7 +22,6 @@ _TOKEN_DIR = os.path.join(os.environ.get("APPDATA", _BASE_DIR), APP_ID)
 os.makedirs(_TOKEN_DIR, exist_ok=True)
 TOKEN_FILE = os.path.join(_TOKEN_DIR, "auth_token.txt")
 LOG_FILE   = os.path.join(_BASE_DIR, "log.txt")
-
 ytmd = YTMD(APP_ID, APP_NAME, APP_VERSION)
 
 def log(msg):

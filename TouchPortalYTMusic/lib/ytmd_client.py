@@ -1,17 +1,24 @@
 import base64
 import threading
-
+import auth
+import state
 import requests
 
 from config import ytmd, log
 from tp_client import TPClient
-import auth
-import state
 
 # API values: -1=Unknown → INDIFFERENT, 0=Dislike, 1=Indifferent (no rating), 2=Like
 LIKE_MAP   = {-1: "INDIFFERENT", 0: "DISLIKE", 1: "INDIFFERENT", 2: "LIKE"}
 REPEAT_MAP = {-1: "NONE",        0: "NONE",    1: "ALL",         2: "ONE"}
 
+_last_video_id = None
+_state_cache: dict = {}  # tracks last-sent value per state ID to avoid redundant updates
+
+# ----- volume debounce -----
+# The TP volume connector can fire many events during a drag.
+# Debouncing prevents hitting the API rate limit (2 commands/sec).
+_volume_timer   = None
+_volume_pending = None
 
 def format_seconds(secs):
     try:
@@ -20,8 +27,7 @@ def format_seconds(secs):
     except Exception:
         return "00:00"
 
-
-def ytmd_command(command, data=None):
+def ytmd_command(command, data):
     """Send a command to YTMD. Maps command name strings to SDK methods."""
     COMMAND_MAP = {
         "play":           ytmd.play,
@@ -63,10 +69,8 @@ def ytmd_command(command, data=None):
     except Exception as e:
         log(f"Command error ({command}): {e}")
 
-
 def is_token_valid():
     return ytmd.is_token_valid()
-
 
 def get_state():
     """Fetch current YTMD state. Returns parsed dict or None on any error."""
@@ -79,11 +83,6 @@ def get_state():
     except Exception as e:
         log(f"GET /state error: {e}")
         return None
-
-
-_last_video_id = None
-_state_cache: dict = {}  # tracks last-sent value per state ID to avoid redundant updates
-
 
 def push_tp_states(state_data):
     global _last_video_id
@@ -204,10 +203,11 @@ def push_tp_states(state_data):
     except Exception as e:
         log(f"State update error: {e}")
 
-
 def refresh_playlists():
-    """Fetch playlist list from YTMD and push choices to TP.
-    Note: /api/v1/playlists has a rate limit of ~1 request per 30 seconds."""
+    """
+        Fetch playlist list from YTMD and push choices to TP.
+        Note: /api/v1/playlists has a rate limit of ~1 request per 30 seconds.
+    """
     try:
         resp = ytmd.get_playlists()
         if resp.status_code == 200:
@@ -222,19 +222,10 @@ def refresh_playlists():
     except Exception as e:
         log(f"Playlist refresh error: {e}")
 
-
 def seed_initial_state():
     data = get_state()
     if data:
         push_tp_states(data)
-
-
-# ----- volume debounce -----
-# The TP volume connector can fire many events during a drag.
-# Debouncing prevents hitting the API rate limit (2 commands/sec).
-_volume_timer   = None
-_volume_pending = None
-
 
 def _flush_volume():
     global _volume_timer, _volume_pending
@@ -242,7 +233,6 @@ def _flush_volume():
     if _volume_pending is not None:
         ytmd_command("setVolume", _volume_pending)
         _volume_pending = None
-
 
 def debounced_set_volume(value):
     global _volume_timer, _volume_pending
