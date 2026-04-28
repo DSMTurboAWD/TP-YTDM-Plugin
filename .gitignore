@@ -1,3 +1,6 @@
 .env
 *.tpp
 *__pycache__/
+log.*
+logs/
+.pytest_cache/
