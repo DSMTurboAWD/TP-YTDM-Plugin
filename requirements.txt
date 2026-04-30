@@ -13,4 +13,4 @@ TouchPortal-API>=1.7.9
 typing_extensions>=4.5.0
 urllib3>=1.26.15
 websocket-client>=1.0
-ytmd-sdk>=1.1.0
+ytmd-sdk>=1.2.0

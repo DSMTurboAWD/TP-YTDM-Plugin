@@ -257,7 +257,7 @@ class TestYTMDCommands(unittest.TestCase):
             with self.subTest(command=cmd):
                 _mock_ytmd_instance.reset_mock()
                 getattr(_mock_ytmd_instance, sdk_method).return_value = _ok()
-                ytmd_client.ytmd_command(cmd)
+                ytmd_client.ytmd_command(cmd, None)
                 getattr(_mock_ytmd_instance, sdk_method).assert_called_once()
 
     # -- data commands --------------------------------------------------------
@@ -298,7 +298,7 @@ class TestYTMDCommands(unittest.TestCase):
         _mock_ytmd_instance.play.return_value = _ok(401)
         state.auth_token = "stale-token"
 
-        ytmd_client.ytmd_command("play")
+        ytmd_client.ytmd_command("play", None)
 
         self.assertIsNone(state.auth_token)
         _mock_ytmd_instance.clear_token.assert_called_once_with(config.TOKEN_FILE)
@@ -306,7 +306,7 @@ class TestYTMDCommands(unittest.TestCase):
     # -- edge cases -----------------------------------------------------------
 
     def test_unknown_command_does_not_raise(self):
-        ytmd_client.ytmd_command("nonExistentCommand")  # must not raise or call any method
+        ytmd_client.ytmd_command("nonExistentCommand", None)  # must not raise or call any method
 
     # -- helpers delegated through ytmd_client --------------------------------
 
@@ -462,6 +462,50 @@ class TestPushTPStates(unittest.TestCase):
             ytmd_client.push_tp_states(_sample_state(volume=75))
         tp_client.TPClient.connectorUpdate.assert_called_with(
             "KillerBOSS.TP.Plugins.YTMD.connectors.APPcontrol", 75)
+
+    # -- cover art ------------------------------------------------------------
+
+    def test_cover_art_fetched_via_sdk_on_new_video(self):
+        """When a new video_id appears with a thumbnail, fetch_cover_art is called."""
+        fake_bytes = b'\x89PNG\r\n'
+        _mock_ytmd_instance.fetch_cover_art.return_value = fake_bytes
+
+        data = _sample_state(video_id="newvid")
+        data["video"]["thumbnails"] = [{"url": "https://example.com/art.jpg"}]
+
+        # Run synchronously by executing the thread target inline.
+        captured_target = {}
+        def _capture_thread(*args, **kwargs):
+            captured_target['fn'] = kwargs.get('target') or args[0]
+            m = MagicMock()
+            m.start = lambda: captured_target['fn']()
+            return m
+
+        with patch('ytmd_client.threading.Thread', side_effect=_capture_thread):
+            ytmd_client.push_tp_states(data)
+
+        _mock_ytmd_instance.fetch_cover_art.assert_called_once_with(
+            "https://example.com/art.jpg")
+
+        import base64
+        expected = base64.b64encode(fake_bytes).decode('utf-8')
+        tp_client.TPClient.stateUpdate.assert_called_once_with(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.Playercover", expected)
+
+    def test_cover_art_not_fetched_for_same_video(self):
+        """fetch_cover_art must not fire again when video_id is unchanged."""
+        _mock_ytmd_instance.fetch_cover_art.return_value = b'\x89PNG'
+        data = _sample_state(video_id="samevid")
+        data["video"]["thumbnails"] = [{"url": "https://example.com/art.jpg"}]
+
+        with patch('ytmd_client.threading.Thread'):
+            ytmd_client.push_tp_states(data)  # first call — fires
+        _mock_ytmd_instance.reset_mock()
+        tp_client.TPClient.reset_mock()
+
+        with patch('ytmd_client.threading.Thread') as mock_thread:
+            ytmd_client.push_tp_states(data)  # second call — same video_id
+            mock_thread.assert_not_called()    # no new thread spawned
 
     # -- queue navigation -----------------------------------------------------
 

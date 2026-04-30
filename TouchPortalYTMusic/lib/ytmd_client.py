@@ -2,7 +2,6 @@ import base64
 import threading
 import auth
 import state
-import requests
 
 from config import ytmd, log
 from tp_client import TPClient
@@ -122,7 +121,7 @@ def push_tp_states(state_data):
             def _fetch_cover(u=url):
                 try:
                     cover_data = base64.b64encode(
-                        requests.get(u, timeout=5).content
+                        ytmd.fetch_cover_art(u)
                     ).decode('utf-8')
                     TPClient.stateUpdate(
                         "KillerBOSS.TouchPortal.Plugin.YTMD.States.Playercover", cover_data
