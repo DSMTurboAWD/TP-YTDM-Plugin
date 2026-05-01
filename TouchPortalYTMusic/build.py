@@ -29,9 +29,29 @@ Even if you don't use all of the above variables, you still need to have the fol
 from TouchPortalAPI import tppbuild
 import json
 import os
+import re
 
 with open(os.path.join(os.path.dirname(__file__), "settings.json"), "r", encoding="utf-8") as _f:
     _settings = json.load(_f)
+
+def _semver_to_tp_int(version: str) -> int:
+    """Convert 'X.Y.Z' to TP integer format (e.g. '2.4.3' → 243)."""
+    parts = [int(x) for x in version.split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return parts[0] * 100 + parts[1] * 10 + parts[2]
+
+# Patch entry.tp "version" to match settings.json app_version before each build.
+_entry_tp_path = os.path.join(os.path.dirname(__file__), "entry.tp")
+with open(_entry_tp_path, "r", encoding="utf-8") as _f:
+    _entry_content = _f.read()
+_entry_content = re.sub(
+    r'"version":\s*\d+',
+    f'"version": {_semver_to_tp_int(_settings["app_version"])}',
+    _entry_content, count=1
+)
+with open(_entry_tp_path, "w", encoding="utf-8") as _f:
+    _f.write(_entry_content)
 
 """
 PLUGIN_MAIN: This lets tppbuild know where your main python plugin file is located so it will know which file to compile.
@@ -88,7 +108,8 @@ ADDITIONAL_TPPSDK_ARGS = []
 Any additional arguments to be passed to Pyinstaller. Optional.
 """
 ADDITIONAL_PYINSTALLER_ARGS = [
-    "--log-level=WARN"
+    "--log-level=WARN",
+    "--paths=lib"        # ensures lib/ modules (config, auth, etc.) are found during analysis
 ]
 
 # validateBuild()

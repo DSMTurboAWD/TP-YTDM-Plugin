@@ -1,6 +1,6 @@
 {
   "sdk": 6,
-  "version": 220,
+  "version": 245,
   "name": "YouTube Music Desktop plugin",
   "id": "YoutubeMusic",
   "configuration": {
@@ -12,18 +12,6 @@
       "name": "IPv4 address",
       "type": "text",
       "default": "localhost",
-      "readOnly": false
-    },
-	{
-      "name": "Passcode",
-      "type": "text",
-      "default": "XXXXX",
-      "readOnly": false
-    },
-	{
-      "name": "Lyrics Range",
-      "type": "text",
-      "default": "-5, 5",
       "readOnly": false
     },
 	{
@@ -477,6 +465,24 @@
 		      "type": "text",
 		      "desc": "YT Music Repeat States",
 		      "default": "NONE"
+		    },
+		    {
+		      "id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.TokenPresent",
+		      "type": "text",
+		      "desc": "Auth token file present on disk",
+		      "default": "False"
+		    },
+		    {
+		      "id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.ConnectionDebug",
+		      "type": "text",
+		      "desc": "Connection debug info",
+		      "default": ""
+		    },
+		    {
+		      "id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.CoverArtURI",
+		      "type": "text",
+		      "desc": "YT Music Cover Art URI (use with Set button icon from URI)",
+		      "default": ""
 		    }
       ]
     }

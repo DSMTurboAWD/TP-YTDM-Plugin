@@ -4,7 +4,7 @@ import auth
 import state
 
 from time import sleep
-from config import ytmd, log
+from config import ytmd, log, TOKEN_FILE
 from tp_client import TPClient
 
 from ytmd_client import (
@@ -60,8 +60,32 @@ def startup_sequence():
 
 
 def _startup_loop():
+    # Resolve host once; used for both auth HTTP calls and Socket.IO connect.
+    sio_host = "127.0.0.1" if state.YTMD_server.lower() == "localhost" else state.YTMD_server
+
+    # Point the SDK at the correct host before any network call (auth or otherwise).
+    ytmd.update_endpoint(sio_host)
+    log(f"startup_sequence: YTMD endpoint → {ytmd.url}")
+
+    log(f"startup_sequence: loading token from {TOKEN_FILE}")
     state.auth_token = auth.load_token()
     log(f"startup_sequence: token {'found' if state.auth_token else 'not found'}")
+
+    # Report token-file presence to TouchPortal immediately so it's visible in the UI.
+    TPClient.stateUpdate(
+        "KillerBOSS.TouchPortal.Plugin.YTMD.States.TokenPresent",
+        str(state.auth_token is not None)
+    )
+
+    # If a token was loaded from disk, verify YTMD still accepts it.
+    # A stale token (e.g. from a prior install) would cause auth to be silently
+    # skipped and the Socket.IO connect to fail without ever showing the popup.
+    if state.auth_token and not ytmd.is_token_valid():
+        log("startup_sequence: loaded token rejected by YTMD — clearing and re-authenticating")
+        auth.clear_token()
+        TPClient.stateUpdate(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.TokenPresent", "False"
+        )
 
     while state.running:
         if not state.auth_token:
@@ -70,13 +94,6 @@ def _startup_loop():
             if not auth.authenticate():
                 sleep(30)  # respect YTMD rate limit on requestcode
                 continue
-
-        # YTMD only listens on IPv4; on Windows 'localhost' often resolves to
-        # ::1 (IPv6) which causes an immediate WebSocket failure.
-        sio_host = "127.0.0.1" if state.YTMD_server.lower() == "localhost" else state.YTMD_server
-
-        # Ensure the SDK points at the correct host before any HTTP calls.
-        ytmd.update_endpoint(sio_host)
 
         # Use ytmd.token as the single source of truth for the auth token.
         token = ytmd.token

@@ -6,8 +6,10 @@ push the right states/updates to Touch Portal.
 External dependencies (TouchPortalAPI, ytmd_sdk) are mocked so these tests
 run without a live YTMD instance or Touch Portal connection.
 """
+import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -26,6 +28,16 @@ sys.modules['TouchPortalAPI'] = _mock_tp_module
 _mock_ytmd_instance = MagicMock()
 _mock_ytmd_module = MagicMock()
 _mock_ytmd_module.YTMD.return_value = _mock_ytmd_instance
+# Give Events real string values so socketio.Client.on() gets proper event name keys.
+_mock_events = type('Events', (), {
+    'connect':          'connect',
+    'disconnect':       'disconnect',
+    'connect_error':    'connect_error',
+    'state_update':     'state-update',
+    'playlist_created': 'playlist-created',
+    'playlist_deleted': 'playlist-deleted',
+})()
+_mock_ytmd_module.Events = _mock_events
 sys.modules['ytmd_sdk'] = _mock_ytmd_module
 
 # ── import plugin modules (order matters) ────────────────────────────────────
@@ -34,6 +46,7 @@ import tp_client     # noqa: E402  TPClient = TouchPortalAPI.Client(...)
 import state         # noqa: E402  shared mutable state
 import auth          # noqa: E402  auth flow delegates to config.ytmd
 import ytmd_client   # noqa: E402  command dispatch + state push
+import socketio_client  # noqa: E402  startup loop and Socket.IO lifecycle
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +108,7 @@ def _reset_all():
     _mock_ytmd_instance.reset_mock()
     # Explicitly clear side_effect on methods commonly set in tests.
     for method in (
-        'request_code', 'request_token', 'get_state',
+        'authenticate', 'request_code', 'request_token', 'get_state',
         'get_playlists', 'is_token_valid', 'load_token',
     ):
         getattr(_mock_ytmd_instance, method).side_effect = None
@@ -155,21 +168,17 @@ class TestAuth(unittest.TestCase):
 
     # -- authenticate() happy path --------------------------------------------
 
-    def test_authenticate_success_calls_sdk_in_order(self):
-        _mock_ytmd_instance.request_code.return_value  = _ok(200, {"code": "AUTH123"})
-        _mock_ytmd_instance.request_token.return_value = _ok(200, {"token": "TOKEN-XYZ"})
+    def test_authenticate_success_calls_sdk_authenticate(self):
+        _mock_ytmd_instance.authenticate.return_value = "TOKEN-XYZ"
 
         result = auth.authenticate()
 
         self.assertTrue(result)
-        _mock_ytmd_instance.request_code.assert_called_once()
-        _mock_ytmd_instance.request_token.assert_called_once_with("AUTH123")
-        _mock_ytmd_instance.update_token.assert_called_once_with("TOKEN-XYZ")
+        _mock_ytmd_instance.authenticate.assert_called_once()
         _mock_ytmd_instance.save_token.assert_called_once_with(config.TOKEN_FILE)
 
     def test_authenticate_success_sets_state_auth_token(self):
-        _mock_ytmd_instance.request_code.return_value  = _ok(200, {"code": "AUTH123"})
-        _mock_ytmd_instance.request_token.return_value = _ok(200, {"token": "TOKEN-XYZ"})
+        _mock_ytmd_instance.authenticate.return_value = "TOKEN-XYZ"
 
         auth.authenticate()
 
@@ -177,42 +186,24 @@ class TestAuth(unittest.TestCase):
 
     # -- authenticate() failure paths -----------------------------------------
 
-    def test_authenticate_returns_false_on_request_code_failure(self):
-        _mock_ytmd_instance.request_code.return_value = _ok(503)
+    def test_authenticate_returns_false_on_none_token(self):
+        _mock_ytmd_instance.authenticate.return_value = None
 
         result = auth.authenticate()
 
         self.assertFalse(result)
-        _mock_ytmd_instance.request_token.assert_not_called()
-
-    def test_authenticate_returns_false_on_request_token_failure(self):
-        _mock_ytmd_instance.request_code.return_value  = _ok(200, {"code": "AUTH123"})
-        _mock_ytmd_instance.request_token.return_value = _ok(403)
-
-        result = auth.authenticate()
-
-        self.assertFalse(result)
-        _mock_ytmd_instance.update_token.assert_not_called()
+        _mock_ytmd_instance.save_token.assert_not_called()
 
     def test_authenticate_returns_false_on_empty_token(self):
-        _mock_ytmd_instance.request_code.return_value  = _ok(200, {"code": "AUTH123"})
-        _mock_ytmd_instance.request_token.return_value = _ok(200, {"token": ""})
+        _mock_ytmd_instance.authenticate.return_value = ""
 
         result = auth.authenticate()
 
         self.assertFalse(result)
-        _mock_ytmd_instance.update_token.assert_not_called()
-
-    def test_authenticate_returns_false_on_missing_token_key(self):
-        _mock_ytmd_instance.request_code.return_value  = _ok(200, {"code": "AUTH123"})
-        _mock_ytmd_instance.request_token.return_value = _ok(200, {})  # no "token" key
-
-        result = auth.authenticate()
-
-        self.assertFalse(result)
+        _mock_ytmd_instance.save_token.assert_not_called()
 
     def test_authenticate_returns_false_on_network_exception(self):
-        _mock_ytmd_instance.request_code.side_effect = ConnectionError("refused")
+        _mock_ytmd_instance.authenticate.side_effect = ConnectionError("refused")
 
         result = auth.authenticate()
 
@@ -488,9 +479,12 @@ class TestPushTPStates(unittest.TestCase):
             "https://example.com/art.jpg")
 
         import base64
-        expected = base64.b64encode(fake_bytes).decode('utf-8')
-        tp_client.TPClient.stateUpdate.assert_called_once_with(
-            "KillerBOSS.TouchPortal.Plugin.YTMD.States.Playercover", expected)
+        expected_b64 = base64.b64encode(fake_bytes).decode('utf-8')
+        # stateUpdate is called twice: once for CoverArtURI (before thread), once for Playercover (inside thread).
+        tp_client.TPClient.stateUpdate.assert_any_call(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.CoverArtURI", "https://example.com/art.jpg")
+        tp_client.TPClient.stateUpdate.assert_any_call(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.Playercover", expected_b64)
 
     def test_cover_art_not_fetched_for_same_video(self):
         """fetch_cover_art must not fire again when video_id is unchanged."""
@@ -603,6 +597,240 @@ class TestFormatSeconds(unittest.TestCase):
 
     def test_float_truncated(self):
         self.assertEqual(ytmd_client.format_seconds(90.9), "01:30")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TestStartupLoopTokenValidation — _startup_loop() validates tokens on load
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestStartupLoopTokenValidation(unittest.TestCase):
+    """Tests for the token-validation logic that runs before the main while loop
+    in socketio_client._startup_loop().
+
+    The key invariant: loading a stale token must not silently skip auth.
+    A loaded token must be validated against YTMD before being trusted.
+    """
+
+    def setUp(self):
+        _reset_all()
+        state.YTMD_server = "127.0.0.1"
+        # Prevent the while loop body from executing; tests only check pre-loop logic.
+        state.running = False
+
+    def test_valid_loaded_token_skips_clear_and_auth(self):
+        """Token accepted by YTMD: neither clear_token() nor authenticate() should fire."""
+        _mock_ytmd_instance.load_token.return_value = "valid-token"
+        _mock_ytmd_instance.is_token_valid.return_value = True
+
+        with patch.object(socketio_client.sio, 'connect'), \
+             patch.object(socketio_client.sio, 'disconnect'):
+            socketio_client._startup_loop()
+
+        _mock_ytmd_instance.clear_token.assert_not_called()
+        _mock_ytmd_instance.authenticate.assert_not_called()
+        self.assertEqual(state.auth_token, "valid-token")
+
+    def test_stale_loaded_token_triggers_clear(self):
+        """Token rejected by YTMD: clear_token() must be called and auth_token cleared."""
+        _mock_ytmd_instance.load_token.return_value = "stale-token"
+        _mock_ytmd_instance.is_token_valid.return_value = False
+
+        def _do_clear(path):
+            state.auth_token = None
+
+        _mock_ytmd_instance.clear_token.side_effect = _do_clear
+
+        with patch.object(socketio_client.sio, 'connect'), \
+             patch.object(socketio_client.sio, 'disconnect'):
+            socketio_client._startup_loop()
+
+        _mock_ytmd_instance.clear_token.assert_called_once_with(config.TOKEN_FILE)
+        self.assertIsNone(state.auth_token)
+
+    def test_no_token_skips_validity_check(self):
+        """No token on disk: is_token_valid() must NOT be called (nothing to validate)."""
+        _mock_ytmd_instance.load_token.return_value = None
+
+        with patch.object(socketio_client.sio, 'connect'), \
+             patch.object(socketio_client.sio, 'disconnect'):
+            socketio_client._startup_loop()
+
+        _mock_ytmd_instance.is_token_valid.assert_not_called()
+
+    def test_endpoint_updated_before_auth_check(self):
+        """update_endpoint() must be called before any auth or token work."""
+        _mock_ytmd_instance.load_token.return_value = None
+        state.YTMD_server = "192.168.1.100"
+
+        with patch.object(socketio_client.sio, 'connect'), \
+             patch.object(socketio_client.sio, 'disconnect'):
+            socketio_client._startup_loop()
+
+        _mock_ytmd_instance.update_endpoint.assert_called_with("192.168.1.100")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TestLogging — config.log() writes to disk
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestLogging(unittest.TestCase):
+    """Verify that config.log() creates the log file and appends messages."""
+
+    def test_log_creates_file_on_first_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = os.path.join(tmp, "test.log")
+            original = config.LOG_FILE
+            config.LOG_FILE = log_path
+            try:
+                config.log("hello world")
+                self.assertTrue(os.path.exists(log_path))
+            finally:
+                config.LOG_FILE = original
+
+    def test_log_message_written_to_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = os.path.join(tmp, "test.log")
+            original = config.LOG_FILE
+            config.LOG_FILE = log_path
+            try:
+                config.log("test message")
+                with open(log_path, encoding="utf-8") as f:
+                    contents = f.read()
+                self.assertIn("test message", contents)
+            finally:
+                config.LOG_FILE = original
+
+    def test_log_appends_multiple_messages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = os.path.join(tmp, "test.log")
+            original = config.LOG_FILE
+            config.LOG_FILE = log_path
+            try:
+                config.log("line one")
+                config.log("line two")
+                with open(log_path, encoding="utf-8") as f:
+                    contents = f.read()
+                self.assertIn("line one", contents)
+                self.assertIn("line two", contents)
+                # Both messages should be present — no overwrite
+                self.assertGreater(contents.count("\n"), 1)
+            finally:
+                config.LOG_FILE = original
+
+    def test_log_does_not_overwrite_existing_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = os.path.join(tmp, "test.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("pre-existing content\n")
+            original = config.LOG_FILE
+            config.LOG_FILE = log_path
+            try:
+                config.log("new entry")
+                with open(log_path, encoding="utf-8") as f:
+                    contents = f.read()
+                self.assertIn("pre-existing content", contents)
+                self.assertIn("new entry", contents)
+            finally:
+                config.LOG_FILE = original
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TestEntryTp — entry.tp JSON structure and consistency
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestEntryTp(unittest.TestCase):
+    """Validate that entry.tp is valid JSON and contains the expected structure."""
+
+    @classmethod
+    def setUpClass(cls):
+        entry_path = os.path.join(_PLUGIN_DIR, "entry.tp")
+        with open(entry_path, "r", encoding="utf-8") as f:
+            cls.entry = json.load(f)
+        # Flatten all states from all categories for convenient lookup.
+        cls.state_ids = {
+            s["id"]
+            for cat in cls.entry.get("categories", [])
+            for s in cat.get("states", [])
+        }
+        cls.action_ids = {
+            a["id"]
+            for cat in cls.entry.get("categories", [])
+            for a in cat.get("actions", [])
+        }
+
+    def test_entry_tp_is_valid_json(self):
+        self.assertIsInstance(self.entry, dict)
+
+    def test_required_top_level_keys_present(self):
+        for key in ("sdk", "version", "id", "categories"):
+            self.assertIn(key, self.entry, f"Missing top-level key: {key}")
+
+    def test_plugin_id_is_correct(self):
+        self.assertEqual(self.entry["id"], "YoutubeMusic")
+
+    def test_version_matches_settings_json(self):
+        """entry.tp version integer must match the app_version in settings.json."""
+        parts = [int(x) for x in config.APP_VERSION.split(".")]
+        while len(parts) < 3:
+            parts.append(0)
+        expected = parts[0] * 100 + parts[1] * 10 + parts[2]
+        self.assertEqual(self.entry["version"], expected,
+            f"entry.tp version {self.entry['version']} does not match "
+            f"settings.json app_version {config.APP_VERSION} (expected {expected})")
+
+    def test_core_player_states_present(self):
+        required = [
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerTitle",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.Trackauthor",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerisPaused",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerhasSong",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.PlayerVPercent",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.SeekBarStatus",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.repeatType",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.isAdvertisement",
+        ]
+        for sid in required:
+            self.assertIn(sid, self.state_ids, f"Missing state: {sid}")
+
+    def test_debug_states_present(self):
+        """TokenPresent, ConnectionDebug, and CoverArtURI must be declared so TP can display them."""
+        self.assertIn(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.TokenPresent",
+            self.state_ids,
+        )
+        self.assertIn(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.ConnectionDebug",
+            self.state_ids,
+        )
+        self.assertIn(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.CoverArtURI",
+            self.state_ids,
+        )
+
+    def test_queue_neighbor_states_present(self):
+        for sid in (
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.title",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.author",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.title",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.Next.author",
+        ):
+            self.assertIn(sid, self.state_ids, f"Missing queue-neighbor state: {sid}")
+
+    def test_core_actions_present(self):
+        required = [
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.Play/Pause",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.Next/Previous",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.Like/Dislike",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.SetVolume",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.SetSeekBar",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.RepeatPic",
+            "KillerBOSS.TouchPortal.Plugin.YTMD.Action.AddToPlaylist",
+        ]
+        for aid in required:
+            self.assertIn(aid, self.action_ids, f"Missing action: {aid}")
+
+    def test_at_least_one_category(self):
+        self.assertGreater(len(self.entry.get("categories", [])), 0)
 
 
 if __name__ == '__main__':

@@ -26,7 +26,7 @@ def format_seconds(secs):
     except Exception:
         return "00:00"
 
-def ytmd_command(command, data):
+def ytmd_command(command, data=None):
     """Send a command to YTMD. Maps command name strings to SDK methods."""
     COMMAND_MAP = {
         "play":           ytmd.play,
@@ -116,19 +116,29 @@ def push_tp_states(state_data):
     if video_id and video_id != _last_video_id:
         _last_video_id = video_id
         thumbnails = video.get("thumbnails") or []
+        log(f"Cover art: new video_id={video_id!r}, thumbnails_count={len(thumbnails)}")
         if thumbnails:
             url = thumbnails[-1]["url"]
+            # Push the raw URL immediately so TP can use it with "Set button icon from URI".
+            TPClient.stateUpdate(
+                "KillerBOSS.TouchPortal.Plugin.YTMD.States.CoverArtURI", url
+            )
+            log(f"Cover art: fetching from {url!r}")
             def _fetch_cover(u=url):
                 try:
-                    cover_data = base64.b64encode(
-                        ytmd.fetch_cover_art(u)
-                    ).decode('utf-8')
+                    raw = ytmd.fetch_cover_art(u)
+                    log(f"Cover art: fetch_cover_art returned {len(raw)} bytes")
+                    cover_data = base64.b64encode(raw).decode('utf-8')
+                    log(f"Cover art: pushing {len(cover_data)} base64 chars to TP")
                     TPClient.stateUpdate(
                         "KillerBOSS.TouchPortal.Plugin.YTMD.States.Playercover", cover_data
                     )
+                    log("Cover art: state update sent successfully")
                 except Exception as ex:
-                    log(f"Cover art error: {ex}")
+                    log(f"Cover art error: {type(ex).__name__}: {ex}")
             threading.Thread(target=_fetch_cover, daemon=True).start()
+        else:
+            log("Cover art: no thumbnails in video payload — skipping fetch")
 
     # Build candidate update list — only include entries whose value changed.
     candidates = [

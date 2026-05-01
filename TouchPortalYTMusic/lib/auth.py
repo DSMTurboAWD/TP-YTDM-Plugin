@@ -20,34 +20,23 @@ def authenticate():
     """Two-step YTMD auth: request a code, wait for user approval, exchange for token.
     Returns True on success, False on any failure."""
     try:
-        resp = ytmd.request_code()
-        if resp.status_code != 200:
-            log(f"Auth requestcode failed: HTTP {resp.status_code}")
-            TPClient.settingUpdate("status", "Auth failed — is YTMD running?")
-            return False
-
-        code = resp.json()["code"]
+        log(f"Auth: requesting code from {ytmd.url}/auth/requestcode …")
         TPClient.settingUpdate("status", "Authenticating — approve in YTMD app (30s)…")
-        log(f"Auth code received: {code}")
-
-        resp = ytmd.request_token(code)
-        if resp.status_code != 200:
-            log(f"Auth request failed: HTTP {resp.status_code}")
-            TPClient.settingUpdate("status", "Auth denied or timed out")
-            return False
-
-        token = resp.json().get("token")
+        token = ytmd.authenticate()
         if not token:
+            log("Auth: ytmd.authenticate() returned empty token")
             TPClient.settingUpdate("status", "Auth denied or timed out")
             return False
 
-        ytmd.update_token(token)
+        log("Authentication successful, token saved")
         state.auth_token = token
         save_token()
-        log("Authentication successful, token saved")
+        TPClient.stateUpdate(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.TokenPresent", "True"
+        )
         return True
 
     except Exception as e:
-        log(f"Auth error: {e}")
+        log(f"Auth error ({type(e).__name__}): {e}")
         TPClient.settingUpdate("status", "Auth error — check log.txt")
         return False
