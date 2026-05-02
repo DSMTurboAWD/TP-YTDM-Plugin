@@ -807,6 +807,12 @@ class TestEntryTp(unittest.TestCase):
             self.state_ids,
         )
 
+    def test_track_changed_tick_states_present(self):
+        self.assertIn(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.TrackChangedTick",
+            self.state_ids,
+        )
+
     def test_queue_neighbor_states_present(self):
         for sid in (
             "KillerBOSS.TouchPortal.Plugin.YTMD.States.PreviousSong.title",

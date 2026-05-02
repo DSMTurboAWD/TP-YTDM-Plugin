@@ -1,6 +1,6 @@
 {
   "sdk": 6,
-  "version": 245,
+  "version": 246,
   "name": "YouTube Music Desktop plugin",
   "id": "YoutubeMusic",
   "configuration": {
@@ -349,6 +349,18 @@
             "NONE"
           ],
           "valueStateId":"KillerBOSS.TouchPortal.Plugin.YTMD.States.repeatType"
+        },
+        {
+          "id":"KillerBOSS.TouchPortal.Plugin.YTMD.Events.TrackChanged",
+          "name":"YT Music Track Changed",
+          "format":"When YT Music track changes $val",
+          "type":"communicate",
+          "valueType":"choice",
+          "valueChoices": [
+            "0",
+            "1"
+          ],
+          "valueStateId":"KillerBOSS.TouchPortal.Plugin.YTMD.States.TrackChangedTick"
         }
       ],
       "states": [
@@ -483,6 +495,12 @@
 		      "type": "text",
 		      "desc": "YT Music Cover Art URI (use with Set button icon from URI)",
 		      "default": ""
+		    },
+		    {
+		      "id": "KillerBOSS.TouchPortal.Plugin.YTMD.States.TrackChangedTick",
+		      "type": "text",
+		      "desc": "Alternates 0/1 on every track change — use with the TrackChanged event",
+		      "default": "0"
 		    }
       ]
     }

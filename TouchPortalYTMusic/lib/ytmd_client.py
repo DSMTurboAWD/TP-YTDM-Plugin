@@ -11,6 +11,7 @@ LIKE_MAP   = {-1: "INDIFFERENT", 0: "DISLIKE", 1: "INDIFFERENT", 2: "LIKE"}
 REPEAT_MAP = {-1: "NONE",        0: "NONE",    1: "ALL",         2: "ONE"}
 
 _last_video_id = None
+_track_tick    = "0"  # alternates "0"/"1" on each track change to drive the TrackChanged event
 _state_cache: dict = {}  # tracks last-sent value per state ID to avoid redundant updates
 
 # ----- volume debounce -----
@@ -61,10 +62,12 @@ def ytmd_command(command, data=None):
             log(f"Unknown command: {command}")
             return
 
-        log(f"Command: {command} data={data} status={resp.status_code}")
+        # Only log errors; successful commands are silent to keep log.txt manageable.
         if resp.status_code == 401:
-            log("Command rejected (401) — will re-authenticate on next reconnect")
+            log(f"Command rejected (401) [{command}] — will re-authenticate on next reconnect")
             auth.clear_token()
+        elif resp.status_code not in (200, 204):
+            log(f"Command [{command}] returned unexpected HTTP {resp.status_code}")
     except Exception as e:
         log(f"Command error ({command}): {e}")
 
@@ -84,7 +87,7 @@ def get_state():
         return None
 
 def push_tp_states(state_data):
-    global _last_video_id
+    global _last_video_id, _track_tick
 
     player = state_data.get("player") or {}
     video  = state_data.get("video")  or {}
@@ -114,31 +117,32 @@ def push_tp_states(state_data):
     # block the Socket.IO event callback while the HTTP request is in-flight.
     video_id = video.get("id") if video else None
     if video_id and video_id != _last_video_id:
+        log(f"TrackChange: NEW track — was {_last_video_id!r}, now {video_id!r}")
         _last_video_id = video_id
         thumbnails = video.get("thumbnails") or []
-        log(f"Cover art: new video_id={video_id!r}, thumbnails_count={len(thumbnails)}")
         if thumbnails:
             url = thumbnails[-1]["url"]
-            # Push the raw URL immediately so TP can use it with "Set button icon from URI".
             TPClient.stateUpdate(
                 "KillerBOSS.TouchPortal.Plugin.YTMD.States.CoverArtURI", url
             )
-            log(f"Cover art: fetching from {url!r}")
             def _fetch_cover(u=url):
                 try:
                     raw = ytmd.fetch_cover_art(u)
-                    log(f"Cover art: fetch_cover_art returned {len(raw)} bytes")
                     cover_data = base64.b64encode(raw).decode('utf-8')
-                    log(f"Cover art: pushing {len(cover_data)} base64 chars to TP")
                     TPClient.stateUpdate(
                         "KillerBOSS.TouchPortal.Plugin.YTMD.States.Playercover", cover_data
                     )
-                    log("Cover art: state update sent successfully")
                 except Exception as ex:
                     log(f"Cover art error: {type(ex).__name__}: {ex}")
             threading.Thread(target=_fetch_cover, daemon=True).start()
         else:
-            log("Cover art: no thumbnails in video payload — skipping fetch")
+            log(f"Cover art: no thumbnails for video_id={video_id!r}")
+
+        # Flip the tick to fire the TrackChanged event in TouchPortal.
+        _track_tick = "1" if _track_tick == "0" else "0"
+        TPClient.stateUpdate(
+            "KillerBOSS.TouchPortal.Plugin.YTMD.States.TrackChangedTick", _track_tick
+        )
 
     # Build candidate update list — only include entries whose value changed.
     candidates = [

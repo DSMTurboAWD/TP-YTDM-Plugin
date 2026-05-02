@@ -78,6 +78,7 @@ If the token is ever rejected (e.g. after reinstalling YTMD), simply delete
 | Current Album | Album name |
 | Cover Art | Album artwork (base64-encoded image) |
 | Cover Art URI | Raw thumbnail URL — use with TouchPortal's **Set button icon from URI** action |
+| Track Changed Tick | Alternates `0`/`1` on every track change — drives the **YT Music Track Changed** event |
 | Has Song | `True` / `False` — whether a track is loaded |
 | Is Paused | `True` when paused, `False` when playing or buffering |
 | Current Volume | Volume level 0–100 |
@@ -102,6 +103,7 @@ If the token is ever rejected (e.g. after reinstalling YTMD), simply delete
 | YT Music Song Like States | Fires when the like rating changes (`LIKE` / `DISLIKE` / `INDIFFERENT`) |
 | YT Music is Advertisement | Fires when an ad starts or ends (`True` / `False`) |
 | YT Music Repeat States | Fires when the repeat mode changes (`ALL` / `ONE` / `NONE`) |
+| YT Music Track Changed | Fires whenever the track changes (`0` / `1` alternating) |
 
 ## Settings
 
