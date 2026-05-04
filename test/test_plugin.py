@@ -9,6 +9,7 @@ run without a live YTMD instance or Touch Portal connection.
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -83,3 +84,71 @@ class TestEntryTp(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestTokenStorage(unittest.TestCase):
+    """Token persistence lives in the plugin's auth module, not the SDK."""
+
+    def setUp(self):
+        # Reset shared state and mock before each test.
+        import state as plugin_state
+        plugin_state.auth_token = None
+        _mock_ytmd_instance.reset_mock()
+        _mock_ytmd_instance.token = None
+
+    def _write_token_file(self, path, token):
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(token)
+
+    def test_load_token_returns_none_when_file_missing(self):
+        import auth
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch('config.TOKEN_FILE', os.path.join(tmpdir, 'auth_token.txt')):
+                import importlib, auth as _auth
+                importlib.reload(_auth)
+                result = _auth.load_token()
+        self.assertIsNone(result)
+
+    def test_load_token_reads_file_and_registers_token(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_path = os.path.join(tmpdir, 'auth_token.txt')
+            self._write_token_file(token_path, 'saved-token')
+            with patch('config.TOKEN_FILE', token_path):
+                import importlib, auth as _auth
+                importlib.reload(_auth)
+                result = _auth.load_token()
+        self.assertEqual(result, 'saved-token')
+        _mock_ytmd_instance.update_token.assert_called_with('saved-token')
+
+    def test_save_token_writes_file(self):
+        _mock_ytmd_instance.token = 'my-token'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_path = os.path.join(tmpdir, 'auth_token.txt')
+            with patch('config.TOKEN_FILE', token_path):
+                import importlib, auth as _auth
+                importlib.reload(_auth)
+                _auth.save_token()
+            with open(token_path, 'r') as f:
+                content = f.read()
+        self.assertEqual(content, 'my-token')
+
+    def test_clear_token_calls_revoke_and_removes_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_path = os.path.join(tmpdir, 'auth_token.txt')
+            self._write_token_file(token_path, 'stale-token')
+            with patch('config.TOKEN_FILE', token_path):
+                import importlib, auth as _auth
+                importlib.reload(_auth)
+                _auth.clear_token()
+            self.assertFalse(os.path.exists(token_path))
+        _mock_ytmd_instance.revoke_token.assert_called_once()
+
+    def test_clear_token_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_path = os.path.join(tmpdir, 'nonexistent_token.txt')
+            with patch('config.TOKEN_FILE', token_path):
+                import importlib, auth as _auth
+                importlib.reload(_auth)
+                _auth.clear_token()   # file never existed — must not raise
+                _auth.clear_token()   # second call also must not raise
