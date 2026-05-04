@@ -115,4 +115,16 @@ ADDITIONAL_PYINSTALLER_ARGS = [
 # validateBuild()
 
 if __name__ == "__main__":
+    import subprocess
+    import sys
+
+    # Run the test suite before building. A test failure aborts the build.
+    test_result = subprocess.run(
+        [sys.executable, "-m", "pytest", "../test/test_plugin.py", "-q"],
+        cwd=os.path.dirname(__file__)
+    )
+    if test_result.returncode != 0:
+        print("\nBuild aborted: tests failed. Fix the failures above before building.")
+        sys.exit(test_result.returncode)
+
     tppbuild.runBuild()
